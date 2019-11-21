@@ -60,7 +60,7 @@ const int dri_dir_pin     = 42; //
 
 //TODO: VOUS DEVEZ DETERMINEZ DES BONS PARAMETRES SUIVANTS
 const float filter_rc  =  0.1;
-const float vel_kp     =  1.0; 
+const float vel_kp     =  10.0; 
 const float vel_ki     =  0.0; 
 const float vel_kd     =  0.0;
 const float pos_kp     =  1.0; 
@@ -69,8 +69,9 @@ const float pos_ki     =  0.0;
 const float pos_ei_sat =  10000.0; 
 
 // Loop period 
-const unsigned long time_period_low   = 2;  // 500 Hz for internal PID loop
-const unsigned long time_period_high  = 10; // 100 Hz  for ROS communication
+const unsigned long time_period_low   = 2;    // 500 Hz for internal PID loop
+const unsigned long time_period_high  = 10;   // 100 Hz  for ROS communication
+const unsigned long time_period_com   = 1000; // 1000 ms = max com delay (watchdog)
 
 // Hardware min-zero-max range for the steering servo and the drive
 const int pwm_min_ser = 30  ;
@@ -119,6 +120,7 @@ float pos_error_int = 0;
 unsigned long time_now       = 0;
 unsigned long time_last_low  = 0;
 unsigned long time_last_high = 0;
+unsigned long time_last_com  = 0; //com watchdog
 
 
 ///////////////////////////////////////////////////////////////////
@@ -282,9 +284,12 @@ void set_pwm( int pwm ){
 // Read propulsion command from ROS
 ///////////////////////////////////////////////////////////////////
 void cmdCallback ( const geometry_msgs::Twist&  twistMsg ){
+  
   ser_ref  = twistMsg.angular.z; //rad
   dri_ref  = twistMsg.linear.x;  // volt or m/s or m
   ctl_mode = twistMsg.linear.z;  // 1    or 2   or 3
+
+  time_last_com = millis(); // for watchdog
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -314,8 +319,8 @@ void ctl(){
 
   //TODO: VOUS DEVEZ COMPLETEZ LA DERIVEE FILTRE ICI
   float vel_raw = (enc_now - enc_old) * tick2m / time_period_low * 1000;
-  float alpha   = 0;
-  float vel_fil = vel_raw;    // Filter
+  float alpha   = 0; // TODO
+  float vel_fil = vel_raw;    // Filter TODO
   
   // Propulsion Controllers
   
@@ -349,9 +354,9 @@ void ctl(){
 
     //TODO: VOUS DEVEZ COMPLETEZ LE CONTROLLEUR SUIVANT
     vel_ref       = dri_ref; 
-    vel_error     = 0;
-    vel_error_int = 0;
-    dri_cmd       = 0;
+    vel_error     = vel_ref - vel_fil;
+    vel_error_int = 0; // TODO
+    dri_cmd       = vel_kp * vel_error; // proportionnal only
     
     dri_pwm    = cmd2pwm( dri_cmd ) ;
 
@@ -365,16 +370,16 @@ void ctl(){
 
     //TODO: VOUS DEVEZ COMPLETEZ LE CONTROLLEUR SUIVANT
     pos_ref       = dri_ref; 
-    pos_error     = 0;
-    pos_error_ddt = 0;
-    pos_error_int = 0;
+    pos_error     = 0; // TODO
+    pos_error_ddt = 0; // TODO
+    pos_error_int = 0; // TODO
     
     // Anti wind-up
     if ( pos_error_int > pos_ei_sat ){
       pos_error_int = pos_ei_sat;
     }
     
-    dri_cmd = 0;
+    dri_cmd = 0; // TODO
     
     dri_pwm = cmd2pwm( dri_cmd ) ;
   }
@@ -461,6 +466,18 @@ void loop(){
   
   time_now = millis();
 
+  /////////////////////////////////////////////////////////////
+  // Watchdog: stop the car if no recent communication from ROS
+  //////////////////////////////////////////////////////////////
+
+  if (( time_now - time_last_com ) > time_period_com ) {
+    
+    // All-stop
+    dri_ref  = 0;  // velocity set-point
+    ctl_mode = 2;  // closed-loop velocity mode
+    
+  }
+
   ////////////////////////////////////////
   // Low-level controller
   ///////////////////////////////////////
@@ -489,7 +506,7 @@ void loop(){
     prop_sensors_data[4] = dri_pwm; // drive set point in pwm
     prop_sensors_data[5] = enc_now; // raw encoder counts
     prop_sensors_data[6] = ser_ref; // steering angle
-    prop_sensors_data[7] = 0;
+    prop_sensors_data[7] = (float)( time_now - time_last_com ); // for com debug
     prop_sensors_data[8] = (float)dt;
 
     // Read IMU
@@ -512,6 +529,6 @@ void loop(){
     nodeHandle.spinOnce();
 
     time_last_high = time_now ;
+
   }
-  
 }

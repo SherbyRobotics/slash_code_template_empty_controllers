@@ -174,6 +174,9 @@ class slash_controller(object):
 
         self.laser_y     = msg.linear.y  
         self.laser_theta = msg.angular.z
+
+        # timing here
+        self.timed_controller( None )
       
       
     ##########################################################################################
@@ -198,9 +201,6 @@ class slash_controller(object):
         # Read feedback from arduino
         self.velocity       = msg.data[1]
         self.position       = msg.data[0]
-
-        # timing here
-        self.timed_controller( None )
         
         
     ####################################### 
